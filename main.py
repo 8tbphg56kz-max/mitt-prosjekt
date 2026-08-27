@@ -1,1 +1,1 @@
-print("Hei fra Raspberry Pi!")
+print("Hei fra Raspberry Pi! Dette er versjon 2")
