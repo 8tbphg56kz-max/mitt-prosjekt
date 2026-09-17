@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pumpehuset</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f4f4f4;
+            color: #222;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .section {
+            max-width: 900px;
+            margin: 0 auto 25px auto;
+        }
+
+        .section h2 {
+            margin-bottom: 12px;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .label {
+            font-size: 15px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .value {
+            font-size: 32px;
+            font-weight: bold;
+        }
+
+        .unit {
+            font-size: 18px;
+            color: #666;
+        }
+
+        #updated {
+            text-align: center;
+            color: #666;
+            margin-top: 25px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>🏠 Pumpehuset</h1>
+
+<div class="section">
+    <h2>🌡️ Temperatur og fuktighet</h2>
+
+    <div class="cards">
+        <div class="card">
+            <div class="label">Temperatur</div>
+            <div class="value" id="temperature">--</div>
+            <div class="unit">°C</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Luftfuktighet</div>
+            <div class="value" id="humidity">--</div>
+            <div class="unit">%</div>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h2>📈 Historisk temperatur og fuktighet</h2>
+
+    <div style="background:white; padding:20px; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+        <canvas id="temperatureChart"></canvas>
+    </div>
+</div>
+
+<div class="section">
+    <h2>🔌 Shelly Plug</h2>
+
+    <div class="cards">
+        <div class="card">
+            <div class="label">Effekt</div>
+            <div class="value" id="power">--</div>
+            <div class="unit">W</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Spenning</div>
+            <div class="value" id="voltage">--</div>
+            <div class="unit">V</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Strøm</div>
+            <div class="value" id="current">--</div>
+            <div class="unit">A</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Energi</div>
+            <div class="value" id="energy">--</div>
+            <div class="unit">Wh</div>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h2>📊 Energiforbruk</h2>
+
+    <div class="card">
+        <div class="label">Periode</div>
+        <select id="energyPeriod" onchange="updateEnergy()">
+            <option value="week">Siste uke</option>
+            <option value="month">Denne måneden</option>
+            <option value="year">Dette året</option>
+            <option value="selected_year">Velg år</option>
+        </select>
+
+        <div id="yearSelector" style="display:none; margin-top:15px;">
+            <select id="energyYear" onchange="updateEnergy()"></select>
+        </div>
+
+        <div style="margin-top:20px;">
+            <div class="label">Vannpumpen</div>
+            <div class="value" id="pumpEnergy">--</div>
+            <div class="unit">kWh</div>
+        </div>
+
+        <div style="margin-top:20px;">
+            <div class="label">Pumpehuset totalt</div>
+            <div class="value" id="totalEnergy">--</div>
+            <div class="unit">kWh</div>
+        </div>
+    </div>
+</div>
+
+<div id="updated">Oppdaterer...</div>
+
+<section class="section">
+    <h2>⚡ Shelly EM Gen3</h2>
+
+    <div class="cards">
+        <div class="card">
+            <div class="label">Total strøm</div>
+            <div class="value" id="em0_current">--</div>
+            <div class="unit">A</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Total effekt</div>
+            <div class="value" id="em0_power">--</div>
+            <div class="unit">W</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Pumpestrøm</div>
+            <div class="value" id="em1_current">--</div>
+            <div class="unit">A</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Pumpeeffekt</div>
+            <div class="value" id="em1_power">--</div>
+            <div class="unit">W</div>
+        </div>
+    </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+async function updateEnergy() {
+    try {
+        const period = document.getElementById('energyPeriod').value;
+        const yearSelector = document.getElementById('yearSelector');
+
+        if (period === 'selected_year') {
+            yearSelector.style.display = 'block';
+
+            const yearSelect = document.getElementById('energyYear');
+
+            if (yearSelect.options.length === 0) {
+                const currentYear = new Date().getFullYear();
+
+                for (let year = currentYear; year >= 2026; year--) {
+                    const option = document.createElement('option');
+                    option.value = year;
+                    option.textContent = year;
+                    yearSelect.appendChild(option);
+                }
+            }
+
+            const year = yearSelect.value;
+            const response = await fetch(
+                `/api/em/energy?period=selected_year&year=${year}`
+            );
+            const data = await response.json();
+
+            document.getElementById('pumpEnergy').textContent =
+                data.pump_kwh ?? '--';
+
+            document.getElementById('totalEnergy').textContent =
+                data.total_kwh ?? '--';
+
+        } else {
+            yearSelector.style.display = 'none';
+
+            const response = await fetch(
+                `/api/em/energy?period=${period}`
+            );
+            const data = await response.json();
+
+            document.getElementById('pumpEnergy').textContent =
+                data.pump_kwh ?? '--';
+
+            document.getElementById('totalEnergy').textContent =
+                data.total_kwh ?? '--';
+        }
+
+    } catch (error) {
+        console.error('Feil ved henting av energiforbruk:', error);
+        document.getElementById('pumpEnergy').textContent = '--';
+        document.getElementById('totalEnergy').textContent = '--';
+    }
+}
+
+
+
+async function updateTemperatureChart() {
+    try {
+        const historyResponse = await fetch('/api/temperature/history?hours=24');
+const history = await historyResponse.json();
+
+if (window.temperatureChart instanceof Chart) {
+    window.temperatureChart.destroy();
+}
+
+const ctx = document.getElementById('temperatureChart');
+
+window.temperatureChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: history.map(r =>
+            new Date(r.timestamp).toLocaleTimeString('no-NO', {
+                hour: '2-digit',
+                minute: '2-digit'
+            })
+        ),
+        datasets: [
+            {
+                label: 'Temperatur °C',
+                data: history.map(r => r.temperature),
+                tension: 0.3,
+                yAxisID: 'temperature'
+            },
+            {
+                label: 'Luftfuktighet %',
+                data: history.map(r => r.humidity),
+                tension: 0.3,
+                yAxisID: 'humidity'
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        interaction: {
+            mode: 'index',
+            intersect: false
+        },
+        scales: {
+            temperature: {
+                type: 'linear',
+                position: 'left',
+                title: {
+                    display: true,
+                    text: '°C'
+                }
+            },
+            humidity: {
+                type: 'linear',
+                position: 'right',
+                title: {
+                    display: true,
+                    text: '%'
+                },
+                grid: {
+                    drawOnChartArea: false
+                }
+            }
+        }
+    }
+});
+
+    } catch (error) {
+        console.error('Feil ved oppdatering av temperaturgraf:', error);
+    }
+}
+
+async function updateData() {
+    try {
+        const tempResponse = await fetch('/api/temperature/latest');
+        const temp = await tempResponse.json();
+
+        document.getElementById('temperature').textContent =
+            temp.temperature ?? '--';
+
+        document.getElementById('humidity').textContent =
+            temp.humidity ?? '--';
+
+        const plugResponse = await fetch('/api/plug/latest');
+        const plug = await plugResponse.json();
+
+        document.getElementById('power').textContent =
+            plug.power ?? '--';
+
+        document.getElementById('voltage').textContent =
+            plug.voltage ?? '--';
+
+        document.getElementById('current').textContent =
+            plug.current ?? '--';
+
+        document.getElementById('energy').textContent =
+            plug.energy ?? '--';
+
+const emResponse = await fetch('/api/em/latest');
+const em = await emResponse.json();
+
+document.getElementById('em0_current').textContent =
+    em.total_current ?? '--';
+
+document.getElementById('em0_power').textContent =
+    em.total_power ?? '--';
+
+document.getElementById('em1_current').textContent =
+    em.pump_current ?? '--';
+
+document.getElementById('em1_power').textContent =
+    em.pump_power ?? '--';
+
+document.getElementById('updated').textContent =
+            'Sist oppdatert: ' + new Date().toLocaleTimeString('no-NO');
+
+    } catch (error) {
+        document.getElementById('updated').textContent =
+            'Kunne ikke hente data';
+        console.error(error);
+    }
+}
+
+updateData();
+updateEnergy();
+updateTemperatureChart();
+setInterval(updateData, 10000);
+setInterval(updateEnergy, 300000);
+setInterval(updateTemperatureChart, 300000);
+</script>
+
+</body>
+</html>
+
